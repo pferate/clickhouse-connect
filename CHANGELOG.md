@@ -5,6 +5,9 @@
 ### Bug Fixes
 - Dict-valued settings such as `additional_table_filters` no longer crash with `DB::Exception: Cannot parse quoted string` when passed through `query()`'s `settings` parameter. The value was rendered with Python's own `str()`/`repr()` of the dict, which mixes single and double quotes and is not valid ClickHouse map-literal syntax; it is now rendered as a properly single-quoted, escaped ClickHouse map literal. Closes [#501](https://github.com/ClickHouse/clickhouse-connect/issues/501).
 
+### Improvements
+- Added Kerberos/SPNEGO ("Negotiate") authentication support for both clients via the new `use_kerberos` and `kerberos_hostname_override` connection parameters, using the current process's Kerberos credential cache. This requires the new `kerberos` extra: `pip install clickhouse-connect[kerberos]`. Because ClickHouse authenticates each HTTP request independently rather than caching authentication for a session, a fresh Kerberos token is generated for every request. Closes [#128](https://github.com/ClickHouse/clickhouse-connect/issues/128).
+
 ## 1.5.0, 2026-07-15
 
 ### Bug Fixes

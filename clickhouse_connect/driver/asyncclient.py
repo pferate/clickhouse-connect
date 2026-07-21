@@ -52,6 +52,7 @@ from clickhouse_connect.driver.exceptions import (
 )
 from clickhouse_connect.driver.external import ExternalData
 from clickhouse_connect.driver.insert import InsertContext
+from clickhouse_connect.driver.kerberos import check_kerberos, negotiate_auth_header
 from clickhouse_connect.driver.models import ColumnDef, SettingDef
 from clickhouse_connect.driver.options import check_arrow, check_numpy, check_pandas, check_polars
 from clickhouse_connect.driver.query import (
@@ -208,6 +209,8 @@ class AsyncClient(Client):
         database: str | None = None,
         access_token: str | None = None,
         token_provider: Callable[[], str | Awaitable[str]] | None = None,
+        use_kerberos: bool | str = False,
+        kerberos_hostname_override: str | None = None,
         compress: bool | str = True,
         connect_timeout: int = 10,
         send_receive_timeout: int = 300,
@@ -257,8 +260,17 @@ class AsyncClient(Client):
 
         self._token_provider = token_provider  # initial token is resolved in _initialize()
 
-        # Priority: access_token > mutual TLS > basic auth
-        if client_cert and (tls_mode is None or tls_mode == "mutual"):
+        use_kerberos = coerce_bool(use_kerberos)
+        self._use_kerberos = use_kerberos
+        self._kerberos_hostname = None
+
+        # Priority: kerberos > access_token > mutual TLS > basic auth
+        if use_kerberos:
+            if access_token or token_provider or username or client_cert:
+                raise ProgrammingError("Cannot combine use_kerberos with access_token, token_provider, username/password, or client_cert")
+            check_kerberos()
+            self._kerberos_hostname = kerberos_hostname_override or host
+        elif client_cert and (tls_mode is None or tls_mode == "mutual"):
             if not username:
                 raise ProgrammingError("username parameter is required for Mutual TLS authentication")
             self.headers["X-ClickHouse-User"] = username
@@ -1992,6 +2004,9 @@ class AsyncClient(Client):
             final_params["query_id"] = str(uuid.uuid4())
 
         req_headers = dict_copy(self.headers, headers)
+        if self._use_kerberos:
+            assert self._kerberos_hostname is not None
+            req_headers["Authorization"] = negotiate_auth_header(self._kerberos_hostname)
         if self.server_host_name:
             req_headers["Host"] = self.server_host_name
         query_session = final_params.get("session_id")

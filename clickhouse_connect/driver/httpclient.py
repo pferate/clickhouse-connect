@@ -43,6 +43,7 @@ from clickhouse_connect.driver.httputil import (
     get_response_data,
 )
 from clickhouse_connect.driver.insert import InsertContext
+from clickhouse_connect.driver.kerberos import check_kerberos, negotiate_auth_header
 from clickhouse_connect.driver.query import QueryContext, QueryResult, TzMode, TzSource
 from clickhouse_connect.driver.summary import QuerySummary
 from clickhouse_connect.driver.transform import NativeTransform
@@ -87,6 +88,8 @@ class HttpClient(Client):
         database: str | None,
         access_token: str | None = None,
         token_provider: Callable[[], str] | None = None,
+        use_kerberos: bool | str = False,
+        kerberos_hostname_override: str | None = None,
         compress: bool | str = True,
         query_limit: int = 0,
         query_retries: int = 2,
@@ -162,7 +165,15 @@ class HttpClient(Client):
         self._token_provider = token_provider
         if token_provider:
             access_token = token_provider()
-        if access_token:
+        use_kerberos = coerce_bool(use_kerberos)
+        self._use_kerberos = use_kerberos
+        self._kerberos_hostname = None
+        if use_kerberos:
+            if access_token or token_provider or username or client_cert:
+                raise ProgrammingError("Cannot combine use_kerberos with access_token, token_provider, username/password, or client_cert")
+            check_kerberos()
+            self._kerberos_hostname = kerberos_hostname_override or host
+        elif access_token:
             self.headers["Authorization"] = f"Bearer {access_token}"
         elif (not client_cert or tls_mode in ("strict", "proxy")) and username:
             self.headers["Authorization"] = "Basic " + b64encode(f"{username}:{password}".encode()).decode()
@@ -560,6 +571,9 @@ class HttpClient(Client):
         if isinstance(data, str):
             data = data.encode()
         headers = dict_copy(self.headers, headers)
+        if self._use_kerberos:
+            assert self._kerberos_hostname is not None
+            headers["Authorization"] = negotiate_auth_header(self._kerberos_hostname)
         attempts = 0
         auth_retried = False
         final_params = {}

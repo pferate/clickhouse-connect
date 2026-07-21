@@ -162,6 +162,7 @@ def _fake_response(status, ex_code=None):
 def _build_sync_client(provider):
     client = HttpClient.__new__(HttpClient)
     client._token_provider = provider
+    client._use_kerberos = False
     client.headers = {"Authorization": f"Bearer {provider()}"}  # initial token, mirrors __init__
     client.url = "http://localhost:8123"
     client.params = {}
@@ -274,6 +275,7 @@ class _FakeSession:
 def _build_async_client(provider, responses):
     client = AsyncClient.__new__(AsyncClient)
     client._token_provider = provider
+    client._use_kerberos = False
     client.headers = {"Authorization": f"Bearer {provider()}"}
     client.url = "http://localhost:8123"
     client.server_host_name = None
